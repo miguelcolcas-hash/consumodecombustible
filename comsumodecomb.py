@@ -83,7 +83,8 @@ def extraer_datos_combustible(fecha):
     mask_m3 = df_raw['UNIDAD_MEDIDA'].str.contains('M3', na=False)
     
     df_raw.loc[mask_gas & mask_m3, 'CONSUMO'] = df_raw.loc[mask_gas & mask_m3, 'CONSUMO'] / 1000000.0
-    df_raw.loc[mask_gas & mask_m3, 'UNIDAD_MEDIDA'] = 'MM3'
+    # Modificación exacta de nomenclatura (Mm3)
+    df_raw.loc[mask_gas & mask_m3, 'UNIDAD_MEDIDA'] = 'Mm3'
 
     df_raw['FECHA_OPERATIVA'] = pd.to_datetime(fecha)
     
