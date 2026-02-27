@@ -78,12 +78,12 @@ def extraer_datos_combustible(fecha):
     for col in ['EMPRESA', 'CENTRAL', 'MEDIDOR', 'TIPO_COMBUSTIBLE', 'UNIDAD_MEDIDA']:
         df_raw[col] = df_raw[col].astype(str).str.strip().str.upper()
 
-    # --- REGLA NORMATIVA: Conversión de gas a Mm3 ---
+    # --- REGLA NORMATIVA: Conversión estricta de gas a Mm3 ---
     mask_gas = df_raw['TIPO_COMBUSTIBLE'].str.contains('GAS', na=False)
     mask_m3 = df_raw['UNIDAD_MEDIDA'].str.contains('M3', na=False)
     
+    # Solo a las unidades de gas natural que vengan en m3 se les aplica la división y cambio de etiqueta
     df_raw.loc[mask_gas & mask_m3, 'CONSUMO'] = df_raw.loc[mask_gas & mask_m3, 'CONSUMO'] / 1000000.0
-    # Modificación exacta de nomenclatura (Mm3)
     df_raw.loc[mask_gas & mask_m3, 'UNIDAD_MEDIDA'] = 'Mm3'
 
     df_raw['FECHA_OPERATIVA'] = pd.to_datetime(fecha)
@@ -113,7 +113,7 @@ def procesar_rango_fechas(start_date, end_date, progress_bar, status_text):
 
 # --- 3. INTERFAZ DE USUARIO ---
 st.sidebar.header("Parámetros de Fiscalización")
-rango_fechas = st.sidebar.date_input("Intervalo de Fechas (IEOD)", value=(datetime(2026, 1, 1), datetime(2026, 1, 3)))
+rango_fechas = st.sidebar.date_input("Intervalo de Fechas (IEOD)", value=(datetime(2026, 2, 14), datetime(2026, 2, 15)))
 
 if st.sidebar.button("Extraer Consumo", type="primary"):
     if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
@@ -149,39 +149,41 @@ if 'df_combustible' in st.session_state:
         st.markdown("---")
         
         # ==========================================
-        # FILTROS DESPLEGABLES (CASCADA)
+        # FILTROS DESPLEGABLES (CASCADA) - AHORA CON MEDIDOR
         # ==========================================
         st.markdown("### 🔍 Filtros Operativos")
         
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        
+        # 1. Empresa
         lista_empresas = sorted(df_datos['EMPRESA'].unique())
-        
-        col_f1, col_f2, col_f3 = st.columns(3)
-        
         with col_f1:
-            filtro_emp = st.multiselect("🏢 Empresa Concesionaria:", options=lista_empresas, placeholder="Choose options...")
+            filtro_emp = st.multiselect("🏢 Empresa:", options=lista_empresas, placeholder="Seleccionar...")
             
-        if filtro_emp:
-            df_temp_cen = df_datos[df_datos['EMPRESA'].isin(filtro_emp)]
-        else:
-            df_temp_cen = df_datos
-            
+        # 2. Central (Depende de Empresa)
+        df_temp_cen = df_datos[df_datos['EMPRESA'].isin(filtro_emp)] if filtro_emp else df_datos
         lista_centrales = sorted(df_temp_cen['CENTRAL'].unique())
-        
         with col_f2:
-            filtro_cen = st.multiselect("⚡ Central Termoeléctrica:", options=lista_centrales, placeholder="Choose options...")
+            filtro_cen = st.multiselect("⚡ Central:", options=lista_centrales, placeholder="Seleccionar...")
             
-        lista_comb = sorted(df_datos['TIPO_COMBUSTIBLE'].unique())
-        
+        # 3. Medidor / Unidad (Depende de Central)
+        df_temp_med = df_temp_cen[df_temp_cen['CENTRAL'].isin(filtro_cen)] if filtro_cen else df_temp_cen
+        lista_medidores = sorted(df_temp_med['MEDIDOR'].unique())
         with col_f3:
-            filtro_comb = st.multiselect("🛢️ Tipo de Combustible:", options=lista_comb, placeholder="Choose options...")
+            filtro_med = st.multiselect("📟 Medidor / Unidad:", options=lista_medidores, placeholder="Seleccionar...")
+            
+        # 4. Combustible (Depende del Medidor)
+        df_temp_comb = df_temp_med[df_temp_med['MEDIDOR'].isin(filtro_med)] if filtro_med else df_temp_med
+        lista_comb = sorted(df_temp_comb['TIPO_COMBUSTIBLE'].unique())
+        with col_f4:
+            filtro_comb = st.multiselect("🛢️ Combustible:", options=lista_comb, placeholder="Seleccionar...")
 
+        # Aplicación global de filtros
         df_filtrado = df_datos.copy()
-        if filtro_emp:
-            df_filtrado = df_filtrado[df_filtrado['EMPRESA'].isin(filtro_emp)]
-        if filtro_cen:
-            df_filtrado = df_filtrado[df_filtrado['CENTRAL'].isin(filtro_cen)]
-        if filtro_comb:
-            df_filtrado = df_filtrado[df_filtrado['TIPO_COMBUSTIBLE'].isin(filtro_comb)]
+        if filtro_emp: df_filtrado = df_filtrado[df_filtrado['EMPRESA'].isin(filtro_emp)]
+        if filtro_cen: df_filtrado = df_filtrado[df_filtrado['CENTRAL'].isin(filtro_cen)]
+        if filtro_med: df_filtrado = df_filtrado[df_filtrado['MEDIDOR'].isin(filtro_med)]
+        if filtro_comb: df_filtrado = df_filtrado[df_filtrado['TIPO_COMBUSTIBLE'].isin(filtro_comb)]
 
         if df_filtrado.empty:
             st.warning("⚠️ No hay datos para la combinación de filtros seleccionada.")
@@ -192,7 +194,6 @@ if 'df_combustible' in st.session_state:
             # ==========================================
             st.markdown("### 📊 Consumo Diario Detallado por Tipo de Combustible")
             
-            # --- NUEVOS CONTROLES DE VISUALIZACIÓN ---
             col_opt1, col_opt2 = st.columns(2)
             with col_opt1:
                 mostrar_total = st.toggle("Mostrar Etiqueta de Total Diario", value=True)
@@ -213,20 +214,19 @@ if 'df_combustible' in st.session_state:
                 df_grp = df_plot.groupby(['FECHA_OPERATIVA', 'CENTRAL'])['CONSUMO'].sum().reset_index()
                 
                 if df_grp['CONSUMO'].sum() == 0:
-                    st.info(f"ℹ️ No hay consumo de **{comb}** en el periodo y centrales seleccionadas.")
+                    st.info(f"ℹ️ No hay consumo de **{comb}** en el periodo y filtros seleccionados.")
                     st.markdown("<br>", unsafe_allow_html=True)
                     continue
                 
                 df_grp_plot = df_grp[df_grp['CONSUMO'] > 0].copy()
                 
-                # 1. Totalizamos el consumo por día
+                # Totalizamos el consumo por día
                 df_totales = df_grp.groupby('FECHA_OPERATIVA', as_index=False).agg(TOTAL=('CONSUMO', 'sum'))
                 
-                # 2. Encontramos la Central con mayor consumo por día
+                # Encontramos la Central con mayor consumo por día
                 idx_max = df_grp_plot.groupby('FECHA_OPERATIVA')['CONSUMO'].idxmax()
                 df_max_cen = df_grp_plot.loc[idx_max, ['FECHA_OPERATIVA', 'CENTRAL']].rename(columns={'CENTRAL': 'MAX_CENTRAL'})
                 
-                # Fusionamos ambos cálculos
                 df_anotaciones = pd.merge(df_totales, df_max_cen, on='FECHA_OPERATIVA', how='left')
                 
                 fig = px.bar(
@@ -241,11 +241,11 @@ if 'df_combustible' in st.session_state:
                         "CENTRAL": "Central Térmica"
                     },
                     barmode="stack",
-                    text_auto='.2s' 
+                    text_auto='.4f' # Muestra 4 decimales dentro de las barras para no redondear bruscamente
                 )
                 
                 max_y = df_totales['TOTAL'].max()
-                margen_y = max_y * 1.2 if max_y > 0 else 1 
+                margen_y = max_y * 1.25 if max_y > 0 else 1 
 
                 fig.update_layout(
                     xaxis_tickangle=-45, 
@@ -256,17 +256,16 @@ if 'df_combustible' in st.session_state:
                     yaxis=dict(range=[0, margen_y])
                 )
                 
-                # Inyectamos anotaciones condicionales basadas en los botones Toggle
                 for _, row in df_anotaciones.iterrows():
                     if row['TOTAL'] > 0 and pd.notna(row['MAX_CENTRAL']):
                         lineas_texto = []
                         
                         if mostrar_total:
-                            lineas_texto.append(f"<b>Total: {row['TOTAL']:,.1f}</b>")
+                            # Total formateado a 4 decimales precisos
+                            lineas_texto.append(f"<b>Total: {row['TOTAL']:,.4f}</b>")
                         if mostrar_max:
                             lineas_texto.append(f"⚡ Max: {row['MAX_CENTRAL']}")
                             
-                        # Solo agregamos la anotación si al menos un botón está encendido
                         if lineas_texto:
                             texto_anotacion = "<br>".join(lineas_texto)
                             fig.add_annotation(
@@ -274,7 +273,7 @@ if 'df_combustible' in st.session_state:
                                 y=row['TOTAL'],
                                 text=texto_anotacion,
                                 showarrow=False,
-                                yshift=20,
+                                yshift=25,
                                 font=dict(size=11, color="black"),
                                 align="center"
                             )
@@ -287,12 +286,26 @@ if 'df_combustible' in st.session_state:
             st.markdown("---")
             
             # ==========================================
-            # TABLA DE TRAZABILIDAD
+            # TABLA DE TRAZABILIDAD 
             # ==========================================
             st.markdown("### 🗄️ Trazabilidad de Registros Crudos")
-            df_mostrar = df_filtrado[['FECHA_OPERATIVA', 'EMPRESA', 'CENTRAL', 'MEDIDOR', 'TIPO_COMBUSTIBLE', 'CONSUMO', 'UNIDAD_MEDIDA']].copy()
+            
+            # ORDEN EXACTO SOLICITADO (Unidad antes de Consumo)
+            df_mostrar = df_filtrado[['FECHA_OPERATIVA', 'EMPRESA', 'CENTRAL', 'MEDIDOR', 'TIPO_COMBUSTIBLE', 'UNIDAD_MEDIDA', 'CONSUMO']].copy()
             df_mostrar['FECHA_OPERATIVA'] = df_mostrar['FECHA_OPERATIVA'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+            
+            # Forzamos a Streamlit a mostrar hasta 6 decimales para evitar que 0.000174 se vea como 0.0002
+            st.dataframe(
+                df_mostrar, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "CONSUMO": st.column_config.NumberColumn(
+                        "CONSUMO",
+                        format="%.6f" 
+                    )
+                }
+            )
 
 else:
     st.info("👈 Configura el rango de fechas en el panel lateral y haz clic en 'Extraer Consumo' para iniciar la fiscalización.")
