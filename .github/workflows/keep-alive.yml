@@ -2,14 +2,14 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # Se ejecuta todos los días a las 12:00 UTC
-    - cron: '0 12 * * *' 
-  workflow_dispatch: # Te permite ejecutar el script manualmente desde la pestaña "Actions"
+    # Se ejecuta cada 12 horas (ej. 00:00 y 12:00 UTC)
+    - cron: '0 */12 * * *' 
+  workflow_dispatch:
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Streamlit App
-        # Reemplaza la URL de abajo con el enlace real de tu aplicación
-        run: curl -s -o /dev/null -w "%{http_code}" https://supervisionconsumodecombustible.streamlit.app
+        # Añadimos -L para seguir redirecciones y un User-Agent simulando Chrome en Windows
+        run: curl -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -s -o /dev/null -w "%{http_code}\n" https://supervisionconsumodecombustible.streamlit.app
