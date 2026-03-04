@@ -307,7 +307,7 @@ def extraer_datos_ieod(fecha):
         
         for col in ['EMPRESA', 'CENTRAL', 'MEDIDOR', 'TIPO_COMBUSTIBLE', 'UNIDAD_MEDIDA']:
             df_raw[col] = df_raw[col].astype(str).str.strip().str.upper()
-    
+
         df_raw = df_raw[~df_raw['TIPO_COMBUSTIBLE'].str.contains('GAS', na=False)]
         df_raw = df_raw[df_raw['TIPO_COMBUSTIBLE'].str.contains('DIESEL|DIÉSEL|RESIDUAL', na=False)]
         
@@ -634,16 +634,18 @@ with t_ieod:
                     df_cons_final = df_p_cons[df_p_cons['CONS_PLOT'] > 0].groupby(['FECHA_OPERATIVA', 'CENTRAL'])['CONS_PLOT'].sum().reset_index()
                     
                     if not df_cons_final.empty:
-                        st.markdown(f"**🔥 Consumo Diario Ejecutado ({unidad_sel_log})**")
-                        # Gráfica de Barras AGRUPADAS
+                        # Convertimos a string para forzar el trato categórico en Plotly (se muestran TODOS los IEODs)
+                        df_cons_final['FECHA_STR'] = df_cons_final['FECHA_OPERATIVA'].dt.strftime('%d/%m/%Y')
+                        st.markdown(f"### 🔥 Consumo Diario Ejecutado ({unidad_sel_log})")
+                        
                         fig_cons = px.bar(
-                            df_cons_final, x="FECHA_OPERATIVA", y="CONS_PLOT", color="CENTRAL", text_auto='.2s'
+                            df_cons_final, x="FECHA_STR", y="CONS_PLOT", color="CENTRAL", text_auto='.2s'
                         )
                         fig_cons.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Consumo ({unidad_sel_log})", barmode="group")
                         fig_cons.update_traces(textposition='outside')
-                        fig_cons.update_xaxes(dtick="86400000", tickformat="%d/%m/%Y")
-                        # Aplicar lógica de Totales corregida para barras agrupadas
-                        fig_cons = agregar_totales_diarios(fig_cons, df_cons_final, "FECHA_OPERATIVA", "CONS_PLOT", "Consumo Total", unidad_sel_log, barmode="group")
+                        fig_cons.update_xaxes(type='category', categoryorder='category ascending', tickmode='linear')
+                        
+                        fig_cons = agregar_totales_diarios(fig_cons, df_cons_final, "FECHA_STR", "CONS_PLOT", "Consumo Total", unidad_sel_log, barmode="group")
                         st.plotly_chart(fig_cons, use_container_width=True)
 
             if not df_stock_log.empty:
@@ -654,28 +656,30 @@ with t_ieod:
                     
                     df_stk_final = df_p_stk[df_p_stk['STOCK_PLOT'] > 0].copy()
                     if not df_stk_final.empty:
-                        st.markdown(f"**🏭 Inventario Cierre del Día ({unidad_sel_log})**")
-                        # Gráfica de Barras AGRUPADAS
+                        df_stk_final['FECHA_STR'] = df_stk_final['FECHA_OPERATIVA'].dt.strftime('%d/%m/%Y')
+                        st.markdown(f"### 🏭 Inventario Cierre del Día ({unidad_sel_log})")
+                        
                         fig_stk = px.bar(
-                            df_stk_final, x="FECHA_OPERATIVA", y="STOCK_PLOT", color="CENTRAL", text_auto='.2s'
+                            df_stk_final, x="FECHA_STR", y="STOCK_PLOT", color="CENTRAL", text_auto='.2s'
                         )
                         fig_stk.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Stock Final ({unidad_sel_log})", barmode="group")
                         fig_stk.update_traces(textposition='outside')
-                        fig_stk.update_xaxes(dtick="86400000", tickformat="%d/%m/%Y")
-                        fig_stk = agregar_totales_diarios(fig_stk, df_stk_final, "FECHA_OPERATIVA", "STOCK_PLOT", "Stock Total", unidad_sel_log, barmode="group")
+                        fig_stk.update_xaxes(type='category', categoryorder='category ascending', tickmode='linear')
+                        fig_stk = agregar_totales_diarios(fig_stk, df_stk_final, "FECHA_STR", "STOCK_PLOT", "Stock Total", unidad_sel_log, barmode="group")
                         st.plotly_chart(fig_stk, use_container_width=True)
                             
                     df_repo_final = df_p_stk[df_p_stk['REPO_PLOT'] > 0].copy()
                     if not df_repo_final.empty:
-                        st.markdown(f"**🚛 Reposición Diaria ({unidad_sel_log})**")
-                        # Gráfica de Barras AGRUPADAS
+                        df_repo_final['FECHA_STR'] = df_repo_final['FECHA_OPERATIVA'].dt.strftime('%d/%m/%Y')
+                        st.markdown(f"### 🚛 Reposición Diaria ({unidad_sel_log})")
+                        
                         fig_repo = px.bar(
-                            df_repo_final, x="FECHA_OPERATIVA", y="REPO_PLOT", color="CENTRAL", text_auto='.2s'
+                            df_repo_final, x="FECHA_STR", y="REPO_PLOT", color="CENTRAL", text_auto='.2s'
                         )
                         fig_repo.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Reposición Diaria ({unidad_sel_log})", barmode="group")
                         fig_repo.update_traces(textposition='outside')
-                        fig_repo.update_xaxes(dtick="86400000", tickformat="%d/%m/%Y")
-                        fig_repo = agregar_totales_diarios(fig_repo, df_repo_final, "FECHA_OPERATIVA", "REPO_PLOT", "Reposición Total", unidad_sel_log, barmode="group")
+                        fig_repo.update_xaxes(type='category', categoryorder='category ascending', tickmode='linear')
+                        fig_repo = agregar_totales_diarios(fig_repo, df_repo_final, "FECHA_STR", "REPO_PLOT", "Reposición Total", unidad_sel_log, barmode="group")
                         st.plotly_chart(fig_repo, use_container_width=True)
                     else:
                         st.info(f"**🚛 Reposición Diaria:** No hay reposición registrada para {comb} en el periodo y centrales seleccionadas.")
@@ -744,7 +748,6 @@ with t_proy:
 
         st.markdown("---")
 
-        # Iteramos por combustible para asegurar que las proyecciones sean numéricamente exactas
         comb_iterar_proy = filtro_comb_proy if filtro_comb_proy else combs_totales_proy
         
         for comb in comb_iterar_proy:
@@ -824,7 +827,7 @@ with t_proy:
                 df_combined = pd.DataFrame(combined_records)
                 
                 if not df_combined.empty:
-                    st.markdown(f"#### 📈 Evolución Diaria: Ejecutado vs. Proyectado")
+                    st.markdown(f"### 📈 Evolución Diaria: Ejecutado vs. Proyectado")
                     
                     df_combined['DIA_SEMANA'] = df_combined['FECHA_OPERATIVA'].dt.weekday.map(lambda x: DIAS_ESP[x])
                     df_combined['FECHA_DISPLAY'] = df_combined['DIA_SEMANA'] + "<br>" + df_combined['FECHA_OPERATIVA'].dt.strftime("%d/%m/%Y")
@@ -834,17 +837,16 @@ with t_proy:
                         df_combined, x="FECHA_DISPLAY", y="CONS_PLOT", color="CENTRAL", pattern_shape="TIPO_DATO", text_auto='.2s'
                     )
                     fig_proy.update_layout(height=500, xaxis_title="Día Operativo", yaxis_title=f"Consumo ({unidad_sel_proy})", barmode="relative")
-                    fig_proy.update_xaxes(categoryorder='array', categoryarray=df_combined['FECHA_DISPLAY'].unique())
+                    fig_proy.update_xaxes(type='category', categoryorder='array', categoryarray=df_combined['FECHA_DISPLAY'].unique(), tickmode='linear')
                     fig_proy = agregar_totales_diarios(fig_proy, df_combined, "FECHA_DISPLAY", "CONS_PLOT", "Total", unidad_sel_proy, col_tipo="TIPO_DATO", barmode="relative")
                     st.plotly_chart(fig_proy, use_container_width=True)
 
                     st.markdown("---")
                     
-                    st.markdown(f"#### 📊 Consumo Total Acumulado por Central en el Periodo")
+                    st.markdown(f"### 📊 Consumo Total Acumulado por Central en el Periodo")
                     # Gráfico 2: Barras Apiladas por TIPO_DATO dentro de cada CENTRAL
                     df_total_cen = df_combined.groupby(['CENTRAL', 'TIPO_DATO'])['CONS_PLOT'].sum().reset_index()
                     
-                    # Ordenamos las centrales por el gran total de mayor a menor
                     orden_centrales = df_total_cen.groupby('CENTRAL')['CONS_PLOT'].sum().sort_values(ascending=False).index.tolist()
                     
                     fig_tot = px.bar(
@@ -855,10 +857,8 @@ with t_proy:
                     
                     fig_tot.update_layout(height=500, xaxis_title="Central Térmica", yaxis_title=f"Consumo Acumulado ({unidad_sel_proy})", barmode="relative")
                     
-                    # Corregimos el cálculo del rango Y global para el gráfico de totales
                     df_tot_sum = df_total_cen.groupby('CENTRAL', as_index=False)['CONS_PLOT'].sum()
                     max_y_tot = df_tot_sum['CONS_PLOT'].max()
-                    # Aumentamos el "headroom" para que el texto nunca choque con el patrón achurado
                     fig_tot.update_layout(yaxis=dict(range=[0, max_y_tot * 1.35 if max_y_tot > 0 else 1]))
                     
                     for _, row in df_tot_sum.iterrows():
