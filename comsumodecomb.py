@@ -223,7 +223,7 @@ def extraer_datos_yupana_memoria(f):
             
     return datos_dia
 
-def crear_grafica_area_apilada(df_plot, marcadores=None):
+def crear_grafica_area_apilada(df_plot, marcadores=None, unidad="Galones"):
     df_plot = df_plot.copy().fillna(0)
     num_cols = [c for c in df_plot.columns if c != 'Hora']
     df_plot[num_cols] = df_plot[num_cols].apply(pd.to_numeric, errors='coerce').fillna(0).round(2)
@@ -243,9 +243,9 @@ def crear_grafica_area_apilada(df_plot, marcadores=None):
     for trace in fig.data:
         trace.hoverinfo = ['skip' if pd.isna(v) or float(v) <= 0.01 else 'all' for v in trace.y]
         if 'TOTAL CONSUMO' in trace.name: 
-            trace.hovertemplate = '<b>%{y:,.2s} Galones</b><br>%{x|%d/%m %H:%M}'
+            trace.hovertemplate = f'<b>%{{y:,.2f}} {unidad}</b><br>%{{x|%d/%m %H:%M}}'
         else: 
-            trace.hovertemplate = "%{y:,.2s} Galones"
+            trace.hovertemplate = f"%{{y:,.2f}} {unidad}"
     
     if marcadores:
         for ts, texto in marcadores:
@@ -253,7 +253,7 @@ def crear_grafica_area_apilada(df_plot, marcadores=None):
             align = "left" if ts.hour == 0 and ts.minute == 30 else "center"
             fig.add_annotation(x=ts, y=1.02, yref="paper", text=f"<b>{texto} {ts.strftime('%H:%M')}</b>", showarrow=False, font=dict(size=10, color="white"), bgcolor="#e74c3c", bordercolor="white", borderwidth=1, borderpad=3, textangle=-90, yanchor="bottom", xanchor=align)
             
-    fig.update_layout(hovermode="x unified", height=600, margin=dict(t=120, b=50, l=60, r=50), yaxis_title="Consumo de Combustible (Galones)")
+    fig.update_layout(hovermode="x unified", height=600, margin=dict(t=120, b=50, l=60, r=50), yaxis_title=f"Consumo de Combustible ({unidad})")
     return fig
 
 # --- 4. ETL IEOD (EJECUTADO / POST-OPERACIÓN / STOCK) ---
@@ -408,6 +408,15 @@ t_yupana, t_ieod, t_proy = st.tabs([
 with t_yupana:
     st.info("**Contexto Osinergmin:** Datos del **Despacho Programado** de la Reserva Fría / Diésel, acompañados de sus **Justificaciones (Motivos RDO)**.")
     
+    c_unidad_yup, _ = st.columns([1, 1])
+    with c_unidad_yup:
+        unidad_sel_yupana = st.radio("⚙️ Selección Volumétrica (YUPANA):", ["m3", "Galones", "bbl"], horizontal=True, key="rad_yupana")
+    
+    # Factor de conversión considerando que la data cruda de YUPANA está en Galones.
+    factor_yupana = 1.0
+    if unidad_sel_yupana == "m3": factor_yupana = 1 / 264.172
+    elif unidad_sel_yupana == "bbl": factor_yupana = 1 / 42.0
+    
     if 'datos_yupana' in st.session_state:
         data = st.session_state['datos_yupana']
         fechas_ordenadas = sorted(data.keys())
@@ -486,31 +495,34 @@ with t_yupana:
                 
                 df_daily = df_total_comb.copy()
                 df_daily['Fecha_Operativa'] = (df_daily['Hora'] - pd.Timedelta(minutes=1)).dt.date
-                df_daily_grouped = df_daily.groupby('Fecha_Operativa')[lista_filtro_comb].sum()
+                df_daily_grouped = df_daily.groupby('Fecha_Operativa')[lista_filtro_comb].sum() * factor_yupana
                 
                 daily_totals = df_daily_grouped.sum(axis=1)
                 max_centrals = df_daily_grouped.idxmax(axis=1)
                 max_vals = df_daily_grouped.max(axis=1)
                 
-                st.markdown("#### 📊 Consumo Total Diario (Galones)")
+                st.markdown(f"#### 📊 Consumo Total Diario ({unidad_sel_yupana})")
                 metric_cols = st.columns(len(daily_totals))
                 for idx, (fecha_val, total_val) in enumerate(daily_totals.items()):
                     with metric_cols[idx]:
                         st.metric(
                             label=f"📅 {fecha_val.strftime('%d/%m/%Y')} (Prog.)", 
-                            value=f"{formato_k_m(total_val)} Gal.",
-                            delta=f"🔥 Max: {max_centrals[fecha_val]} ({formato_k_m(max_vals[fecha_val])} Gal.)",
+                            value=f"{formato_k_m(total_val)} {unidad_sel_yupana}",
+                            delta=f"🔥 Max: {max_centrals[fecha_val]} ({formato_k_m(max_vals[fecha_val])} {unidad_sel_yupana})",
                             delta_color="off"
                         )
                 st.markdown("---")
                 
-                df_plot_comb = df_total_comb[['Hora'] + lista_filtro_comb]
-                st.plotly_chart(crear_grafica_area_apilada(df_plot_comb, marcadores=marcadores_globales), use_container_width=True)
+                df_plot_comb = df_total_comb[['Hora'] + lista_filtro_comb].copy()
+                for c in lista_filtro_comb:
+                    df_plot_comb[c] = df_plot_comb[c] * factor_yupana
+                    
+                st.plotly_chart(crear_grafica_area_apilada(df_plot_comb, marcadores=marcadores_globales, unidad=unidad_sel_yupana), use_container_width=True)
                 
                 st.markdown("#### 📋 Resumen Operativo Diario por Central (YUPANA)")
-                df_c_melt = df_plot_comb.melt(id_vars=['Hora'], value_vars=lista_filtro_comb, var_name='Central', value_name='Consumo_Galones')
+                df_c_melt = df_plot_comb.melt(id_vars=['Hora'], value_vars=lista_filtro_comb, var_name='Central', value_name='Consumo_Volumen')
                 df_c_melt['Fecha'] = (df_c_melt['Hora'] - pd.Timedelta(minutes=1)).dt.strftime('%d/%m/%Y')
-                res_comb = df_c_melt.groupby(['Fecha', 'Central'])['Consumo_Galones'].sum().reset_index()
+                res_comb = df_c_melt.groupby(['Fecha', 'Central'])['Consumo_Volumen'].sum().reset_index()
                 
                 cols_term = [c for c in lista_filtro_comb if c in df_total_term.columns]
                 if cols_term:
@@ -533,17 +545,17 @@ with t_yupana:
                     df_resumen['Horas_Operacion'] = 0.0
                     df_resumen['Potencia_Promedio_MW'] = 0.0
                 
-                df_resumen = df_resumen[(df_resumen['Consumo_Galones'] > 0) | (df_resumen['Horas_Operacion'] > 0)]
+                df_resumen = df_resumen[(df_resumen['Consumo_Volumen'] > 0) | (df_resumen['Horas_Operacion'] > 0)]
                 
                 if not df_resumen.empty:
                     df_view_yup = df_resumen.copy()
-                    df_view_yup['Consumo_Galones'] = df_view_yup['Consumo_Galones'].apply(formato_k_m)
+                    df_view_yup['Consumo_Volumen'] = df_view_yup['Consumo_Volumen'].apply(formato_k_m)
                     
                     st.dataframe(
                         df_view_yup, use_container_width=True, hide_index=True,
                         column_config={
                             "Fecha": "Día Operativo", "Central": "Central Térmica",
-                            "Consumo_Galones": "Consumo Programado (Gal.)",
+                            "Consumo_Volumen": f"Consumo Programado ({unidad_sel_yupana})",
                             "Horas_Operacion": st.column_config.NumberColumn("Horas de Operación", format="%.1f h"),
                             "Potencia_Promedio_MW": st.column_config.NumberColumn("Potencia Promedio", format="%.2f MW")
                         }
@@ -732,7 +744,7 @@ with t_ieod:
                         fecha_corte_str = ultima_fecha_stk.strftime('%d/%m/%Y')
                         
                         st.markdown("---")
-                        st.markdown(f"### ⏱️ Autonomía Operativa Proyectada: {comb} (Desde el {fecha_corte_str})")
+                        st.markdown(f"### ⏱️ Autonomía Operativa Crítica: {comb} (Desde el {fecha_corte_str})")
                         st.info("💡 **Metodología de Cálculo (Operación a Plena Carga):**\n"
                                 "La autonomía operativa se evalúa bajo el escenario de máxima exigencia para garantizar la seguridad del SEIN. "
                                 "Se determina tomando el **Inventario de Cierre de Día (Stock Final)** convertido a galones, "
@@ -752,7 +764,7 @@ with t_ieod:
                             "MALDONADO": {"rendimiento": 12.49186136, "potencia": 17.416},
                             "PUCALLPA": {"rendimiento": 12.11332011, "potencia": 44.054},
                             "RECKA": {"rendimiento": 13.24894387, "potencia": 179.373},
-                            "SANTA ROSA": {"rendimiento": 11.731, "potencia": 373.78},
+                            "SANTA ROSA": {"rendimiento": 11.4447210, "potencia": 207.4278}, # Parámetros calibrados
                             "VENTANILLA": {"rendimiento": 13.24894387, "potencia": 279.720},
                             "ETEN": {"rendimiento": 13.77425577, "potencia": 225.055},
                             "PUERTO BRAVO": {"rendimiento": 13.62748512, "potencia": 600.0},
@@ -778,11 +790,11 @@ with t_ieod:
                         df_autonomia['ENERGIA_DIA_KWH'] = df_autonomia['POTENCIA_EFECTIVA'] * 1000 * 24
                         df_autonomia['CONSUMO_PLENA_CARGA_GAL'] = df_autonomia['ENERGIA_DIA_KWH'] / df_autonomia['RENDIMIENTO']
                         
-                        # Autonomía en días (se evita división por cero)
+                        # Autonomía en días (se evita división por cero) a 2 decimales
                         df_autonomia['DIAS_AUTONOMIA'] = df_autonomia.apply(
                             lambda row: (row['STOCK_GALONES'] / row['CONSUMO_PLENA_CARGA_GAL']) if row['CONSUMO_PLENA_CARGA_GAL'] > 0 else 0, 
                             axis=1
-                        ).round(1)
+                        ).round(2)
 
                         # Gráfica de Autonomía Similar al Consumo Diario Ejecutado
                         fig_auto = px.bar(
@@ -790,14 +802,14 @@ with t_ieod:
                             x="CENTRAL", 
                             y="DIAS_AUTONOMIA", 
                             color="CENTRAL", 
-                            text_auto='.1f',
+                            text_auto='.2f',
                             custom_data=["POTENCIA_EFECTIVA", "RENDIMIENTO", "STOCK_PLOT"]
                         )
                         
                         fig_auto.update_layout(
                             height=450, 
                             xaxis_title="Central Térmica", 
-                            yaxis_title="Autonomía Proyectada (Días)",
+                            yaxis_title="Autonomía Crítica (Días)",
                             showlegend=False,
                             barmode="group"
                         )
@@ -806,9 +818,9 @@ with t_ieod:
                             textposition='outside',
                             hovertemplate=(
                                 "<b>%{x}</b><br>"
-                                "Autonomía a Plena Carga: %{y} Días<br>"
-                                "Potencia Efectiva: %{customdata[0]:.2f} MW<br>"
-                                "Rendimiento: %{customdata[1]:.2f} kWh/gal<br>"
+                                "Autonomía a Plena Carga: %{y:.2f} Días<br>"
+                                "Potencia Efectiva: %{customdata[0]:.4f} MW<br>"
+                                "Rendimiento: %{customdata[1]:.7f} kWh/gal<br>"
                                 "Stock Base Cierre: %{customdata[2]:,.2f} " + unidad_sel_log + "<extra></extra>"
                             )
                         )
@@ -852,9 +864,11 @@ with t_proy:
     st.markdown("### 📋 Metodología de Proyección de Consumo")
     st.info("""
     **¿Cómo funciona el modelo de estimación para los días sin información?**
-    1. **Línea Base Histórica:** El algoritmo toma como referencia estricta la información real (IEOD ejecutado) documentada a partir del **02 de Marzo de 2026**.
-    2. **Estimación por Día de la Semana:** Para proyectar el consumo de un día específico que aún no cuenta con reporte, el sistema calcula el promedio de consumo de los "mismos días" registrados en la historia de la central (Ej. el promedio de todos los Lunes reales).
-    3. **Regla de Excepción (Día Único):** Si una central operó solo 1 día en todo el registro histórico, se toma ese único valor para el resto de los días, aplicando obligatoriamente una penalidad del **10% los domingos**.
+    1. **Línea Base Histórica:** El algoritmo toma como referencia estricta la información real (IEOD ejecutado) documentada a partir del **03 de Marzo de 2026** (excluyendo el 02 de marzo por ser un día atípico de alta demanda).
+    2. **Estimación Base:** Se calcula el promedio de consumo de los últimos 7 días con información real disponible (IEOD) por cada central térmica.
+    3. **Regla de Operación Semanal:** - **Martes a Viernes:** Consumo estimado igual al promedio base calculado.
+       - **Sábados y Lunes:** Reducción del **5%** respecto al promedio base.
+       - **Domingos:** Reducción del **10%** respecto al promedio base.
     4. **Fusión Dinámica:** En el rango de fechas seleccionado, el gráfico muestra el dato real (**Sólido**) y aplica la proyección donde falten datos (**Achurado**).
     """)
 
@@ -903,26 +917,21 @@ with t_proy:
             if isinstance(rango_proy, tuple) and len(rango_proy) == 2:
                 df_ieod_liq['VAL_CONV'] = convertir_volumen(df_ieod_liq['CONSUMO'], df_ieod_liq['UNIDAD_MEDIDA'], unidad_sel_proy)
                 
-                # Línea base estricta desde el 02 de Marzo de 2026
-                ref_date = pd.to_datetime("2026-03-02")
+                # Línea base estricta desde el 03 de Marzo de 2026
+                ref_date = pd.to_datetime("2026-03-03")
                 df_base = df_ieod_liq[df_ieod_liq['FECHA_OPERATIVA'] >= ref_date].copy()
                 if df_base.empty: df_base = df_ieod_liq 
                 
-                # --- CONSTRUCCIÓN DE REGLAS DE DÍA HOMÓLOGO ---
+                # --- CONSTRUCCIÓN DE REGLAS BASADAS EN PROMEDIO SEMANAL ---
                 reglas_cen = {}
                 for cen in df_base['CENTRAL'].unique():
                     df_cen = df_base[df_base['CENTRAL'] == cen]
                     df_cen_diario = df_cen.groupby('FECHA_OPERATIVA')['VAL_CONV'].sum().reset_index()
-                    n_days = df_cen_diario['FECHA_OPERATIVA'].nunique()
-                    
-                    if n_days == 1:
-                        unico_val = df_cen_diario['VAL_CONV'].iloc[0]
-                        reglas_cen[cen] = {'tipo': 'unico', 'val': unico_val}
-                    else:
-                        df_cen_diario['WEEKDAY'] = df_cen_diario['FECHA_OPERATIVA'].dt.weekday
-                        promedios_wd = df_cen_diario.groupby('WEEKDAY')['VAL_CONV'].mean().to_dict()
-                        promedio_general = df_cen_diario['VAL_CONV'].mean()
-                        reglas_cen[cen] = {'tipo': 'multiple', 'promedios_wd': promedios_wd, 'prom_gral': promedio_general}
+                    df_cen_diario = df_cen_diario.sort_values('FECHA_OPERATIVA')
+                    # Tomamos los últimos 7 días de operación real para hallar un promedio representativo base
+                    ultimos_7 = df_cen_diario.tail(7)
+                    promedio_base = ultimos_7['VAL_CONV'].mean() if not ultimos_7.empty else 0.0
+                    reglas_cen[cen] = promedio_base
                 
                 d_start, d_end = rango_proy
                 dates_range = pd.date_range(d_start, d_end).date
@@ -932,7 +941,7 @@ with t_proy:
                 for d in dates_range:
                     d_ts = pd.to_datetime(d)
                     df_day = df_ieod_liq[df_ieod_liq['FECHA_OPERATIVA'].dt.date == d]
-                    wd = d_ts.weekday()
+                    wd = d_ts.weekday() # 0 = Lunes, 1 = Martes, ..., 6 = Domingo
                     
                     # Fusión Dinámica Priorizando IEOD
                     if not df_day.empty:
@@ -946,16 +955,15 @@ with t_proy:
                                     'TIPO_DATO': 'Ejecutado'
                                 })
                     else:
-                        # Estimación algorítmica
-                        for cen, regla in reglas_cen.items():
+                        # Estimación algorítmica perfilada
+                        for cen, base_val in reglas_cen.items():
                             proj_val = 0.0
-                            if regla['tipo'] == 'unico':
-                                proj_val = regla['val'] * 0.9 if wd == 6 else regla['val']
-                            else:
-                                if wd in regla['promedios_wd']:
-                                    proj_val = regla['promedios_wd'][wd]
-                                else:
-                                    proj_val = regla['prom_gral'] * 0.9 if wd == 6 else regla['prom_gral']
+                            if wd in [1, 2, 3, 4]: # Martes a Viernes (Base regular)
+                                proj_val = base_val
+                            elif wd in [0, 5]: # Lunes y Sábados (-5%)
+                                proj_val = base_val * 0.95
+                            elif wd == 6: # Domingos (-10%)
+                                proj_val = base_val * 0.90
                             
                             if proj_val > 0:
                                 combined_records.append({
@@ -1015,6 +1023,71 @@ with t_proy:
                             )
                             
                     st.plotly_chart(fig_tot, use_container_width=True)
+
+                    # =====================================================================
+                    # ====== NUEVO MÓDULO: ESTIMACIÓN DE DÍAS RESTANTES (PROYECCIÓN) ======
+                    # =====================================================================
+                    df_stock_proy_base = st.session_state.get('df_stock', pd.DataFrame())
+                    if not df_stock_proy_base.empty:
+                        df_stk_liq_p = df_stock_proy_base[df_stock_proy_base['TIPO_COMBUSTIBLE'] == comb].copy()
+                        if filtro_emp_proy: df_stk_liq_p = df_stk_liq_p[df_stk_liq_p['EMPRESA'].isin(filtro_emp_proy)]
+                        if filtro_cen_proy: df_stk_liq_p = df_stk_liq_p[df_stk_liq_p['CENTRAL'].isin(filtro_cen_proy)]
+                        
+                        if not df_stk_liq_p.empty:
+                            st.markdown("---")
+                            st.markdown(f"### ⏳ Estimación de Días de Operación Restantes: {comb}")
+                            st.info("💡 **Metodología de Cálculo (Estimación Dinámica de Días):**\n"
+                                    "Esta métrica proyecta la autonomía operativa de cada central térmica dividiendo el **Inventario de Cierre Real más reciente (IEOD)** "
+                                    "entre el **Promedio de Consumo Diario Proyectado** para el rango de fechas seleccionado. "
+                                    "A diferencia del cálculo crítico de autonomía (que asume un despacho ininterrumpido a potencia efectiva), "
+                                    "esta estimación refleja un escenario operativo realista, basado estrictamente en el comportamiento y tendencias de la programación perfilada de la central.")
+                            
+                            ultima_fecha_stk_p = df_stk_liq_p['FECHA_OPERATIVA'].max()
+                            df_ult_stk_p = df_stk_liq_p[df_stk_liq_p['FECHA_OPERATIVA'] == ultima_fecha_stk_p].copy()
+                            df_ult_stk_p['STOCK_PLOT_PROY'] = convertir_volumen(df_ult_stk_p['STOCK_FINAL'], df_ult_stk_p['UNIDADES'], unidad_sel_proy)
+                            
+                            # Obtenemos el consumo promedio diario a partir de la curva combinada proyectada
+                            df_avg_cons = df_combined.groupby('CENTRAL')['CONS_PLOT'].mean().reset_index()
+                            df_avg_cons.rename(columns={'CONS_PLOT': 'PROM_DIARIO_PROY'}, inplace=True)
+                            
+                            df_est_dias = pd.merge(df_ult_stk_p, df_avg_cons, on='CENTRAL', how='inner')
+                            df_est_dias['EST_DIAS'] = df_est_dias.apply(
+                                lambda row: (row['STOCK_PLOT_PROY'] / row['PROM_DIARIO_PROY']) if row['PROM_DIARIO_PROY'] > 0 else 0,
+                                axis=1
+                            ).round(2)
+                            
+                            if not df_est_dias.empty:
+                                fig_est_dias = px.bar(
+                                    df_est_dias, 
+                                    x="CENTRAL", 
+                                    y="EST_DIAS", 
+                                    color="CENTRAL", 
+                                    text_auto='.2f',
+                                    custom_data=["STOCK_PLOT_PROY", "PROM_DIARIO_PROY"]
+                                )
+                                
+                                fig_est_dias.update_layout(
+                                    height=450, 
+                                    xaxis_title="Central Térmica", 
+                                    yaxis_title="Días de Operación Estimados",
+                                    showlegend=False,
+                                    barmode="group"
+                                )
+                                
+                                fig_est_dias.update_traces(
+                                    textposition='outside',
+                                    hovertemplate=(
+                                        "<b>%{x}</b><br>"
+                                        "Días Estimados: %{y:.2f} Días<br>"
+                                        "Stock Base Cierre: %{customdata[0]:,.2f} " + unidad_sel_proy + "<br>"
+                                        "Consumo Promedio Proyectado: %{customdata[1]:,.2f} " + unidad_sel_proy + "/día<extra></extra>"
+                                    )
+                                )
+                                
+                                max_y_est = df_est_dias['EST_DIAS'].max()
+                                fig_est_dias.update_layout(yaxis=dict(range=[0, max_y_est * 1.25 if max_y_est > 0 else 1]))
+                                
+                                st.plotly_chart(fig_est_dias, use_container_width=True)
 
                     # --- TABLAS DE TRAZABILIDAD (UBICADAS AL FINAL) ---
                     st.markdown("---")
