@@ -71,7 +71,7 @@ def agregar_totales_diarios(fig, df, col_fecha, col_valor, prefijo="Total", unid
             else:
                 tipo_str = ""
                 
-            lbl_val = formato_k_m(row['TOTAL'])
+            lbl_val = f"{row['TOTAL']:,.1f}"
             fig.add_annotation(
                 x=row[col_fecha], y=row['MAX_Y'], 
                 text=f"<b>{prefijo}{tipo_str}:<br>{lbl_val}{str_unidad}</b>", 
@@ -653,7 +653,7 @@ with t_ieod:
                         with tab_cons_agrupada:
                             # Gráfica de Barras AGRUPADAS
                             fig_cons_grp = px.bar(
-                                df_cons_final, x="FECHA_OPERATIVA", y="CONS_PLOT", color="CENTRAL", text_auto='.2s'
+                                df_cons_final, x="FECHA_OPERATIVA", y="CONS_PLOT", color="CENTRAL", text_auto=',.1f'
                             )
                             fig_cons_grp.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Consumo ({unidad_sel_log})", barmode="group")
                             fig_cons_grp.update_traces(textposition='outside')
@@ -664,7 +664,7 @@ with t_ieod:
                         with tab_cons_apilada:
                             # Gráfica de Barras APILADAS
                             fig_cons_stk = px.bar(
-                                df_cons_final, x="FECHA_OPERATIVA", y="CONS_PLOT", color="CENTRAL", text_auto='.2s'
+                                df_cons_final, x="FECHA_OPERATIVA", y="CONS_PLOT", color="CENTRAL", text_auto=',.1f'
                             )
                             fig_cons_stk.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Consumo ({unidad_sel_log})", barmode="relative")
                             fig_cons_stk.update_traces(textposition='inside')
@@ -687,7 +687,7 @@ with t_ieod:
                         with tab_stk_agrupada:
                             # Gráfica de Barras AGRUPADAS
                             fig_stk_grp = px.bar(
-                                df_stk_final, x="FECHA_OPERATIVA", y="STOCK_PLOT", color="CENTRAL", text_auto='.2s'
+                                df_stk_final, x="FECHA_OPERATIVA", y="STOCK_PLOT", color="CENTRAL", text_auto=',.1f'
                             )
                             fig_stk_grp.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Stock Final ({unidad_sel_log})", barmode="group")
                             fig_stk_grp.update_traces(textposition='outside')
@@ -698,7 +698,7 @@ with t_ieod:
                         with tab_stk_apilada:
                             # Gráfica de Barras APILADAS
                             fig_stk_stk = px.bar(
-                                df_stk_final, x="FECHA_OPERATIVA", y="STOCK_PLOT", color="CENTRAL", text_auto='.2s'
+                                df_stk_final, x="FECHA_OPERATIVA", y="STOCK_PLOT", color="CENTRAL", text_auto=',.1f'
                             )
                             fig_stk_stk.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Stock Final ({unidad_sel_log})", barmode="relative")
                             fig_stk_stk.update_traces(textposition='inside')
@@ -715,7 +715,7 @@ with t_ieod:
                         with tab_repo_agrupada:
                             # Gráfica de Barras AGRUPADAS
                             fig_repo_grp = px.bar(
-                                df_repo_final, x="FECHA_OPERATIVA", y="REPO_PLOT", color="CENTRAL", text_auto='.2s'
+                                df_repo_final, x="FECHA_OPERATIVA", y="REPO_PLOT", color="CENTRAL", text_auto=',.1f'
                             )
                             fig_repo_grp.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Reposición Diaria ({unidad_sel_log})", barmode="group")
                             fig_repo_grp.update_traces(textposition='outside')
@@ -726,7 +726,7 @@ with t_ieod:
                         with tab_repo_apilada:
                             # Gráfica de Barras APILADAS
                             fig_repo_stk = px.bar(
-                                df_repo_final, x="FECHA_OPERATIVA", y="REPO_PLOT", color="CENTRAL", text_auto='.2s'
+                                df_repo_final, x="FECHA_OPERATIVA", y="REPO_PLOT", color="CENTRAL", text_auto=',.1f'
                             )
                             fig_repo_stk.update_layout(height=450, xaxis_title="Día Operativo", yaxis_title=f"Reposición Diaria ({unidad_sel_log})", barmode="relative")
                             fig_repo_stk.update_traces(textposition='inside')
@@ -983,7 +983,7 @@ with t_proy:
                     
                     # Gráfico 1: Barras Apiladas por Día 
                     fig_proy = px.bar(
-                        df_combined, x="FECHA_DISPLAY", y="CONS_PLOT", color="CENTRAL", pattern_shape="TIPO_DATO", text_auto='.2s'
+                        df_combined, x="FECHA_DISPLAY", y="CONS_PLOT", color="CENTRAL", pattern_shape="TIPO_DATO", text_auto=',.1f'
                     )
                     fig_proy.update_layout(height=500, xaxis_title="Día Operativo", yaxis_title=f"Consumo ({unidad_sel_proy})", barmode="relative")
                     fig_proy.update_xaxes(categoryorder='array', categoryarray=df_combined['FECHA_DISPLAY'].unique())
@@ -1001,7 +1001,7 @@ with t_proy:
                     
                     fig_tot = px.bar(
                         df_total_cen, x="CENTRAL", y="CONS_PLOT", color="CENTRAL", 
-                        pattern_shape="TIPO_DATO", text_auto='.2s',
+                        pattern_shape="TIPO_DATO", text_auto=',.1f',
                         category_orders={"CENTRAL": orden_centrales}
                     )
                     
@@ -1015,7 +1015,7 @@ with t_proy:
                     
                     for _, row in df_tot_sum.iterrows():
                         if row['CONS_PLOT'] > 0:
-                            lbl_val = formato_k_m(row['CONS_PLOT'])
+                            lbl_val = f"{row['CONS_PLOT']:,.1f}"
                             fig_tot.add_annotation(
                                 x=row['CENTRAL'], y=row['CONS_PLOT'], 
                                 text=f"<b>Total:<br>{lbl_val}</b>", 
