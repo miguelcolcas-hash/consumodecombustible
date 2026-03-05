@@ -1089,6 +1089,73 @@ with t_proy:
                                 
                                 st.plotly_chart(fig_est_dias, use_container_width=True)
 
+                                # --- Gantt Chart Logic ---
+                                st.markdown("#### 📅 Cronograma de Autonomía Proyectada (Gantt)")
+                                st.info("Esta gráfica de Gantt ilustra la ventana de tiempo en la que cada central podría seguir operando con el último stock reportado, asumiendo que se mantiene el promedio de consumo proyectado.")
+                                
+                                df_gantt = df_est_dias.copy()
+                                
+                                # Filtro específico para el Gantt
+                                opciones_gantt = sorted(df_gantt['CENTRAL'].unique())
+                                filtro_gantt = st.multiselect(f"🔍 Filtrar Centrales para Gantt ({comb}):", options=opciones_gantt, default=opciones_gantt, key=f"gantt_filtro_{comb}")
+                                df_gantt = df_gantt[df_gantt['CENTRAL'].isin(filtro_gantt)]
+                                
+                                if not df_gantt.empty:
+                                    # Comienza a las 00:00 del día siguiente al último reporte IEOD
+                                    df_gantt['FECHA_INICIO'] = ultima_fecha_stk_p + timedelta(days=1)
+                                    df_gantt['FECHA_FIN'] = df_gantt.apply(lambda row: row['FECHA_INICIO'] + timedelta(days=row['EST_DIAS']), axis=1)
+                                    
+                                    df_gantt['FECHA_INICIO_STR'] = df_gantt['FECHA_INICIO'].dt.strftime('%d/%m/%Y')
+                                    df_gantt['FECHA_FIN_STR'] = df_gantt['FECHA_FIN'].dt.strftime('%d/%m/%Y %H:%M')
+
+                                    # ORDEN DE MENOR A MAYOR AUTONOMÍA
+                                    df_gantt = df_gantt.sort_values('FECHA_FIN', ascending=True)
+                                    orden_gantt = df_gantt['CENTRAL'].tolist()
+
+                                    fig_gantt = px.timeline(
+                                        df_gantt, 
+                                        x_start="FECHA_INICIO", 
+                                        x_end="FECHA_FIN", 
+                                        y="CENTRAL", 
+                                        color="CENTRAL",
+                                        text="FECHA_FIN_STR",
+                                        custom_data=["EST_DIAS", "STOCK_PLOT_PROY", "PROM_DIARIO_PROY", "FECHA_INICIO_STR", "FECHA_FIN_STR"],
+                                        category_orders={"CENTRAL": orden_gantt}
+                                    )
+                                    fig_gantt.update_yaxes(autorange="reversed") # Mostrar de menor a mayor de arriba a abajo
+                                    
+                                    # MISMO INTERVALO QUE PROYECCIÓN
+                                    rango_x_inicio = pd.to_datetime(d_start)
+                                    rango_x_fin = pd.to_datetime(d_end) + pd.Timedelta(days=1) # +1 día para incluirlo completamente en la visual
+                                    
+                                    fig_gantt.update_layout(
+                                        height=max(350, len(df_gantt)*45 + 100),
+                                        xaxis_title="Ventana de Operación Proyectada",
+                                        yaxis_title="Central Térmica",
+                                        showlegend=False,
+                                        xaxis=dict(range=[rango_x_inicio, rango_x_fin])
+                                    )
+                                    
+                                    fig_gantt.update_traces(
+                                        textposition='outside',
+                                        hovertemplate=(
+                                            "<b>%{y}</b><br>"
+                                            "Fecha Inicio (Base): %{customdata[3]}<br>"
+                                            "Fecha Fin Estimada: %{customdata[4]}<br>"
+                                            "Días de Autonomía: %{customdata[0]:.2f}<br>"
+                                            "Stock Restante: %{customdata[1]:,.2f} " + unidad_sel_proy + "<extra></extra>"
+                                        )
+                                    )
+                                    st.plotly_chart(fig_gantt, use_container_width=True)
+
+                                    # Tabla de Gantt
+                                    with st.expander("📋 Ver Tabla de Fechas Estimadas de Agotamiento de Stock"):
+                                        df_gantt_table = df_gantt[['CENTRAL', 'FECHA_INICIO', 'FECHA_FIN', 'EST_DIAS', 'STOCK_PLOT_PROY', 'PROM_DIARIO_PROY']].copy()
+                                        df_gantt_table['FECHA_INICIO'] = df_gantt_table['FECHA_INICIO'].dt.strftime('%d/%m/%Y')
+                                        df_gantt_table['FECHA_FIN'] = df_gantt_table['FECHA_FIN'].dt.strftime('%d/%m/%Y %H:%M')
+                                        df_gantt_table.columns = ['Central', 'Fecha Inicial (00:00h)', 'Fecha Estimada Agotamiento', 'Días Estimados', f'Stock Actual ({unidad_sel_proy})', f'Consumo Promedio ({unidad_sel_proy}/Día)']
+                                        st.dataframe(df_gantt_table, use_container_width=True, hide_index=True)
+
                     # --- TABLAS DE TRAZABILIDAD (UBICADAS AL FINAL) ---
                     st.markdown("---")
                     st.markdown("##### 🗂️ Matriz de Consumo: Evolución Diaria")
