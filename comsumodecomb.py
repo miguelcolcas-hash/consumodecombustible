@@ -1101,8 +1101,8 @@ with t_proy:
                                 df_gantt = df_gantt[df_gantt['CENTRAL'].isin(filtro_gantt)]
                                 
                                 if not df_gantt.empty:
-                                    # Comienza a las 00:00 del día siguiente al último reporte IEOD
-                                    df_gantt['FECHA_INICIO'] = ultima_fecha_stk_p + timedelta(days=1)
+                                    # Comienza en la fecha de inicio de la proyección seleccionada
+                                    df_gantt['FECHA_INICIO'] = pd.to_datetime(d_start)
                                     df_gantt['FECHA_FIN'] = df_gantt.apply(lambda row: row['FECHA_INICIO'] + timedelta(days=row['EST_DIAS']), axis=1)
                                     
                                     df_gantt['FECHA_INICIO_STR'] = df_gantt['FECHA_INICIO'].dt.strftime('%d/%m/%Y')
@@ -1153,7 +1153,7 @@ with t_proy:
                                         df_gantt_table = df_gantt[['CENTRAL', 'FECHA_INICIO', 'FECHA_FIN', 'EST_DIAS', 'STOCK_PLOT_PROY', 'PROM_DIARIO_PROY']].copy()
                                         df_gantt_table['FECHA_INICIO'] = df_gantt_table['FECHA_INICIO'].dt.strftime('%d/%m/%Y')
                                         df_gantt_table['FECHA_FIN'] = df_gantt_table['FECHA_FIN'].dt.strftime('%d/%m/%Y %H:%M')
-                                        df_gantt_table.columns = ['Central', 'Fecha Inicial (00:00h)', 'Fecha Estimada Agotamiento', 'Días Estimados', f'Stock Actual ({unidad_sel_proy})', f'Consumo Promedio ({unidad_sel_proy}/Día)']
+                                        df_gantt_table.columns = ['Central', 'Fecha Inicial de Proyección', 'Fecha Estimada Agotamiento', 'Días Estimados', f'Stock Actual ({unidad_sel_proy})', f'Consumo Promedio ({unidad_sel_proy}/Día)']
                                         st.dataframe(df_gantt_table, use_container_width=True, hide_index=True)
 
                     # --- TABLAS DE TRAZABILIDAD (UBICADAS AL FINAL) ---
