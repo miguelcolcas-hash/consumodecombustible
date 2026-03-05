@@ -724,6 +724,106 @@ with t_ieod:
                     else:
                         st.info(f"**🚛 Reposición Diaria:** No hay reposición registrada para {comb} en el periodo y centrales seleccionadas.")
 
+                    # =====================================================================
+                    # ====== NUEVO MÓDULO: AUTONOMÍA DE OPERACIÓN A POTENCIA EFECTIVA ======
+                    # =====================================================================
+                    if not df_stk_final.empty:
+                        ultima_fecha_stk = df_stk_final['FECHA_OPERATIVA'].max()
+                        fecha_corte_str = ultima_fecha_stk.strftime('%d/%m/%Y')
+                        
+                        st.markdown("---")
+                        st.markdown(f"### ⏱️ Autonomía Operativa Proyectada: {comb} (Desde el {fecha_corte_str})")
+                        st.info("💡 **Metodología de Cálculo (Operación a Plena Carga):**\n"
+                                "La autonomía operativa se evalúa bajo el escenario de máxima exigencia para garantizar la seguridad del SEIN. "
+                                "Se determina tomando el **Inventario de Cierre de Día (Stock Final)** convertido a galones, "
+                                "dividido entre el **Consumo Diario Proyectado operando a Potencia Efectiva continua (24 horas)**. "
+                                "El consumo diario a plena carga se halla dividiendo la energía máxima teórica diaria "
+                                "(Potencia Efectiva [MW] × 24h × 1000) entre el Rendimiento Térmico (kWh/gal) auditado de cada central.")
+                        
+                        datos_centrales = {
+                            "CHILINA": {"rendimiento": 11.21175382, "potencia": 22.516},
+                            "MOLLENDO": {"rendimiento": 15.64626147, "potencia": 24.462},
+                            "MALACAS": {"rendimiento": 14.04159985, "potencia": 43.26},
+                            "TALARA": {"rendimiento": 14.00602638, "potencia": 184.875},
+                            "NEPI": {"rendimiento": 13.87997446, "potencia": 600.0},
+                            "ILO": {"rendimiento": 13.86753981, "potencia": 460.0},
+                            "FENIX": {"rendimiento": 18.92706267, "potencia": 545.23399},
+                            "PTO MALDONADO": {"rendimiento": 12.49186136, "potencia": 17.416},
+                            "MALDONADO": {"rendimiento": 12.49186136, "potencia": 17.416},
+                            "PUCALLPA": {"rendimiento": 12.11332011, "potencia": 44.054},
+                            "RECKA": {"rendimiento": 13.24894387, "potencia": 179.373},
+                            "SANTA ROSA": {"rendimiento": 11.731, "potencia": 373.78},
+                            "VENTANILLA": {"rendimiento": 13.24894387, "potencia": 279.720},
+                            "ETEN": {"rendimiento": 13.77425577, "potencia": 225.055},
+                            "PUERTO BRAVO": {"rendimiento": 13.62748512, "potencia": 600.0},
+                            "SAN NICOLAS": {"rendimiento": 11.25381985, "potencia": 62.820},
+                            "TUMBES": {"rendimiento": 17.79143891, "potencia": 17.343}
+                        }
+
+                        def obtener_parametros(nombre_central):
+                            for clave, params in datos_centrales.items():
+                                if clave in str(nombre_central).upper():
+                                    return params['rendimiento'], params['potencia']
+                            return 13.5, 100.0  # Valores referenciales por defecto si no se encuentra en el listado
+
+                        df_autonomia = df_stk_final[df_stk_final['FECHA_OPERATIVA'] == ultima_fecha_stk].copy()
+                        
+                        # Conversión segura del stock a galones usando la función existente
+                        df_autonomia['STOCK_GALONES'] = convertir_volumen(df_autonomia['STOCK_FINAL'], df_autonomia['UNIDADES'], 'Galones')
+                        
+                        # Obtener Parámetros Técnicos
+                        df_autonomia[['RENDIMIENTO', 'POTENCIA_EFECTIVA']] = df_autonomia['CENTRAL'].apply(lambda x: pd.Series(obtener_parametros(x)))
+                        
+                        # Cálculo: Energía Máxima en 24h (kWh) y Consumo a Plena Carga (Galones)
+                        df_autonomia['ENERGIA_DIA_KWH'] = df_autonomia['POTENCIA_EFECTIVA'] * 1000 * 24
+                        df_autonomia['CONSUMO_PLENA_CARGA_GAL'] = df_autonomia['ENERGIA_DIA_KWH'] / df_autonomia['RENDIMIENTO']
+                        
+                        # Autonomía en días (se evita división por cero)
+                        df_autonomia['DIAS_AUTONOMIA'] = df_autonomia.apply(
+                            lambda row: (row['STOCK_GALONES'] / row['CONSUMO_PLENA_CARGA_GAL']) if row['CONSUMO_PLENA_CARGA_GAL'] > 0 else 0, 
+                            axis=1
+                        ).round(1)
+
+                        # Gráfica de Autonomía Similar al Consumo Diario Ejecutado
+                        fig_auto = px.bar(
+                            df_autonomia, 
+                            x="CENTRAL", 
+                            y="DIAS_AUTONOMIA", 
+                            color="CENTRAL", 
+                            text_auto='.1f',
+                            custom_data=["POTENCIA_EFECTIVA", "RENDIMIENTO", "STOCK_PLOT"]
+                        )
+                        
+                        fig_auto.update_layout(
+                            height=450, 
+                            xaxis_title="Central Térmica", 
+                            yaxis_title="Autonomía Proyectada (Días)",
+                            showlegend=False,
+                            barmode="group"
+                        )
+                        
+                        fig_auto.update_traces(
+                            textposition='outside',
+                            hovertemplate=(
+                                "<b>%{x}</b><br>"
+                                "Autonomía a Plena Carga: %{y} Días<br>"
+                                "Potencia Efectiva: %{customdata[0]:.2f} MW<br>"
+                                "Rendimiento: %{customdata[1]:.2f} kWh/gal<br>"
+                                "Stock Base Cierre: %{customdata[2]:,.2f} " + unidad_sel_log + "<extra></extra>"
+                            )
+                        )
+                        
+                        max_y = df_autonomia['DIAS_AUTONOMIA'].max()
+                        fig_auto.update_layout(yaxis=dict(range=[0, max_y * 1.25 if max_y > 0 else 1]))
+                        
+                        st.plotly_chart(fig_auto, use_container_width=True)
+                        
+                        # Resumen tabular desplegable
+                        with st.expander("📋 Ver Matriz de Autonomía Calculada a Potencia Efectiva"):
+                            df_resumen_auto = df_autonomia[['CENTRAL', 'STOCK_PLOT', 'POTENCIA_EFECTIVA', 'RENDIMIENTO', 'CONSUMO_PLENA_CARGA_GAL', 'DIAS_AUTONOMIA']].copy()
+                            df_resumen_auto.columns = ['Central', f'Stock de Cierre ({unidad_sel_log})', 'Potencia Efectiva (MW)', 'Rendimiento (kWh/gal)', 'Consumo a Plena Carga 24h (Galones)', 'Días de Autonomía']
+                            st.dataframe(df_resumen_auto, use_container_width=True, hide_index=True)
+
         st.markdown("---")
         st.markdown("#### 🗄️ Trazabilidad de Registros Crudos Originales (Normativo en M3)")
         col_exp1, col_exp2 = st.columns(2)
