@@ -860,15 +860,31 @@ with t_ieod:
 # =====================================================================
 # ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO) ======
 # =====================================================================
+# =====================================================================
+# ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO) ======
+# =====================================================================
 with t_proy:
+    st.markdown("### ⚙️ Parámetros de Sensibilidad Operativa")
+    
+    # Insertamos los inputs dinámicos en columnas para optimizar el espacio
+    col_pct1, col_pct2, col_pct3 = st.columns(3)
+    with col_pct1:
+        pct_lunes = st.number_input("📉 Reducción Lunes (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5, format="%.1f")
+    with col_pct2:
+        pct_sabado = st.number_input("📉 Reducción Sábado (%)", min_value=0.0, max_value=100.0, value=7.5, step=0.5, format="%.1f")
+    with col_pct3:
+        pct_domingo = st.number_input("📉 Reducción Domingo (%)", min_value=0.0, max_value=100.0, value=23.0, step=0.5, format="%.1f")
+
     st.markdown("### 📋 Metodología de Proyección de Consumo")
-    st.info("""
+    # Actualizamos la explicación usando f-strings para reflejar los valores elegidos por el usuario
+    st.info(f"""
     **¿Cómo funciona el modelo de estimación para los días sin información?**
     1. **Línea Base Histórica:** El algoritmo toma como referencia estricta la información real (IEOD ejecutado) documentada a partir del **03 de Marzo de 2026** (excluyendo el 02 de marzo por ser un día atípico de alta demanda).
     2. **Estimación Base:** Se calcula el promedio de consumo de los últimos 7 días con información real disponible (IEOD) por cada central térmica.
-    3. **Regla de Operación Semanal:** - **Martes a Viernes:** Consumo estimado igual al promedio base calculado.
-       - **Sábados y Lunes:** Reducción del **5%** respecto al promedio base.
-       - **Domingos:** Reducción del **10%** respecto al promedio base.
+    3. **Regla de Operación Semanal Dinámica:** - **Martes a Viernes:** Consumo estimado igual al promedio base calculado.
+       - **Lunes:** Reducción del **{pct_lunes}%** respecto al promedio base.
+       - **Sábados:** Reducción del **{pct_sabado}%** respecto al promedio base.
+       - **Domingos:** Reducción del **{pct_domingo}%** respecto al promedio base.
     4. **Fusión Dinámica:** En el rango de fechas seleccionado, el gráfico muestra el dato real (**Sólido**) y aplica la proyección donde falten datos (**Achurado**).
     """)
 
@@ -877,7 +893,7 @@ with t_proy:
     if has_data_proy:
         df_ieod_proy = st.session_state['df_ieod'].copy()
         
-        st.markdown("#### ⚙️ Parámetros y Filtros de Proyección")
+        st.markdown("#### ⚙️ Filtros de Proyección")
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             ini_def = st.session_state['rango_extraccion'][0]
@@ -902,7 +918,6 @@ with t_proy:
 
         st.markdown("---")
 
-        # Iteramos por combustible para asegurar que las proyecciones sean numéricamente exactas
         comb_iterar_proy = filtro_comb_proy if filtro_comb_proy else combs_totales_proy
         
         for comb in comb_iterar_proy:
@@ -929,19 +944,10 @@ with t_proy:
                     df_cen_diario = df_cen.groupby('FECHA_OPERATIVA')['VAL_CONV'].sum().reset_index()
                     df_cen_diario = df_cen_diario.sort_values('FECHA_OPERATIVA')
                     
-                    # 1. Identificar el día de la semana (0=Lunes, 1=Martes ... 6=Domingo)
                     df_cen_diario['WEEKDAY'] = df_cen_diario['FECHA_OPERATIVA'].dt.weekday
-                    
-                    # 2. Filtrar el dataframe para quedarnos SOLO con los días de Martes a Viernes (1, 2, 3, 4)
                     df_martes_viernes = df_cen_diario[df_cen_diario['WEEKDAY'].isin([1, 2, 3, 4])]
-                    
-                    # 3. Tomar los últimos 2 días disponibles que cumplan esa condición
                     ultimos_2_mv = df_martes_viernes.tail(2)
-                    
-                    # 4. Calcular el promedio de esos dos días (o 0 si no hay datos)
                     promedio_base = ultimos_2_mv['VAL_CONV'].mean() if not ultimos_2_mv.empty else 0.0
-                    
-                    # Almacenamos este nuevo promedio base para la central
                     reglas_cen[cen] = promedio_base
                 
                 d_start, d_end = rango_proy
@@ -954,7 +960,6 @@ with t_proy:
                     df_day = df_ieod_liq[df_ieod_liq['FECHA_OPERATIVA'].dt.date == d]
                     wd = d_ts.weekday() # 0 = Lunes, 1 = Martes, ..., 6 = Domingo
                     
-                    # Fusión Dinámica Priorizando IEOD
                     if not df_day.empty:
                         day_grouped = df_day.groupby('CENTRAL')['VAL_CONV'].sum().reset_index()
                         for _, row in day_grouped.iterrows():
@@ -966,15 +971,17 @@ with t_proy:
                                     'TIPO_DATO': 'Ejecutado'
                                 })
                     else:
-                        # Estimación algorítmica perfilada (Usando el NUEVO promedio_base)
+                        # Estimación algorítmica perfilada (Usando el promedio_base y las variables del usuario)
                         for cen, base_val in reglas_cen.items():
                             proj_val = 0.0
                             if wd in [1, 2, 3, 4]: # Martes a Viernes (Base regular)
                                 proj_val = base_val
-                            elif wd in [0, 5]: # Lunes y Sábados (-5%)
-                                proj_val = base_val * 0.95
-                            elif wd == 6: # Domingos (-10%)
-                                proj_val = base_val * 0.90
+                            elif wd == 0: # Lunes
+                                proj_val = base_val * (1 - (pct_lunes / 100.0))
+                            elif wd == 5: # Sábados
+                                proj_val = base_val * (1 - (pct_sabado / 100.0))
+                            elif wd == 6: # Domingos
+                                proj_val = base_val * (1 - (pct_domingo / 100.0))
                             
                             if proj_val > 0:
                                 combined_records.append({
