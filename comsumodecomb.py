@@ -858,15 +858,13 @@ with t_ieod:
 
 
 # =====================================================================
-# ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO) ======
-# =====================================================================
-# =====================================================================
-# ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO) ======
+# ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO DINÁMICO) ======
 # =====================================================================
 with t_proy:
-    st.markdown("### ⚙️ Parámetros de Sensibilidad Operativa")
+    st.markdown("### 📋 Metodología de Proyección de Consumo")
     
-    # Insertamos los inputs dinámicos en columnas para optimizar el espacio
+    # --- NUEVOS CONTROLES DE PARAMETRIZACIÓN ---
+    st.markdown("#### 🎛️ Parámetros de Reducción Semanal (Perfil de Despacho)")
     col_pct1, col_pct2, col_pct3 = st.columns(3)
     with col_pct1:
         pct_lunes = st.number_input("📉 Reducción Lunes (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5, format="%.1f")
@@ -875,12 +873,10 @@ with t_proy:
     with col_pct3:
         pct_domingo = st.number_input("📉 Reducción Domingo (%)", min_value=0.0, max_value=100.0, value=23.0, step=0.5, format="%.1f")
 
-    st.markdown("### 📋 Metodología de Proyección de Consumo")
-    # Actualizamos la explicación usando f-strings para reflejar los valores elegidos por el usuario
     st.info(f"""
     **¿Cómo funciona el modelo de estimación para los días sin información?**
     1. **Línea Base Histórica:** El algoritmo toma como referencia estricta la información real (IEOD ejecutado) documentada a partir del **03 de Marzo de 2026** (excluyendo el 02 de marzo por ser un día atípico de alta demanda).
-    2. **Estimación Base:** Se calcula el promedio de consumo de los últimos 7 días con información real disponible (IEOD) por cada central térmica.
+    2. **Estimación Base:** Se calcula el promedio de consumo de los últimos 2 días hábiles (Martes a Viernes) con información real disponible (IEOD) por cada central térmica.
     3. **Regla de Operación Semanal Dinámica:** - **Martes a Viernes:** Consumo estimado igual al promedio base calculado.
        - **Lunes:** Reducción del **{pct_lunes}%** respecto al promedio base.
        - **Sábados:** Reducción del **{pct_sabado}%** respecto al promedio base.
@@ -903,7 +899,6 @@ with t_proy:
         with col_f2:
             unidad_sel_proy = st.radio("Volumetría (Diésel/Residual):", ["m3", "Galones", "bbl"], horizontal=True, key="rad_proy_int_2")
 
-        # Filtros Dinámicos para la Pestaña de Proyección
         empresas_totales_proy = sorted(df_ieod_proy['EMPRESA'].dropna().unique()) if not df_ieod_proy.empty else []
         c1_p, c2_p, c3_p = st.columns(3)
         with c1_p: filtro_emp_proy = st.multiselect("🏢 Empresa:", options=empresas_totales_proy, key="emp_proy")
@@ -971,16 +966,16 @@ with t_proy:
                                     'TIPO_DATO': 'Ejecutado'
                                 })
                     else:
-                        # Estimación algorítmica perfilada (Usando el promedio_base y las variables del usuario)
+                        # Estimación algorítmica perfilada con parámetros dinámicos del usuario
                         for cen, base_val in reglas_cen.items():
                             proj_val = 0.0
                             if wd in [1, 2, 3, 4]: # Martes a Viernes (Base regular)
                                 proj_val = base_val
                             elif wd == 0: # Lunes
                                 proj_val = base_val * (1 - (pct_lunes / 100.0))
-                            elif wd == 5: # Sábados
+                            elif wd == 5: # Sábado
                                 proj_val = base_val * (1 - (pct_sabado / 100.0))
-                            elif wd == 6: # Domingos
+                            elif wd == 6: # Domingo
                                 proj_val = base_val * (1 - (pct_domingo / 100.0))
                             
                             if proj_val > 0:
@@ -992,7 +987,7 @@ with t_proy:
                                 })
                                 
                 df_combined = pd.DataFrame(combined_records)
-                
+                               
                 if not df_combined.empty:
                     st.markdown(f"#### 📈 Evolución Diaria: Ejecutado vs. Proyectado")
                     
