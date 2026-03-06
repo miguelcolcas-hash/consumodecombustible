@@ -922,15 +922,26 @@ with t_proy:
                 df_base = df_ieod_liq[df_ieod_liq['FECHA_OPERATIVA'] >= ref_date].copy()
                 if df_base.empty: df_base = df_ieod_liq 
                 
-                # --- CONSTRUCCIÓN DE REGLAS BASADAS EN PROMEDIO SEMANAL ---
+                # --- CONSTRUCCIÓN DE REGLAS BASADAS EN PROMEDIO MARTES A VIERNES ---
                 reglas_cen = {}
                 for cen in df_base['CENTRAL'].unique():
                     df_cen = df_base[df_base['CENTRAL'] == cen]
                     df_cen_diario = df_cen.groupby('FECHA_OPERATIVA')['VAL_CONV'].sum().reset_index()
                     df_cen_diario = df_cen_diario.sort_values('FECHA_OPERATIVA')
-                    # Tomamos los últimos 7 días de operación real para hallar un promedio representativo base
-                    ultimos_7 = df_cen_diario.tail(7)
-                    promedio_base = ultimos_7['VAL_CONV'].mean() if not ultimos_7.empty else 0.0
+                    
+                    # 1. Identificar el día de la semana (0=Lunes, 1=Martes ... 6=Domingo)
+                    df_cen_diario['WEEKDAY'] = df_cen_diario['FECHA_OPERATIVA'].dt.weekday
+                    
+                    # 2. Filtrar el dataframe para quedarnos SOLO con los días de Martes a Viernes (1, 2, 3, 4)
+                    df_martes_viernes = df_cen_diario[df_cen_diario['WEEKDAY'].isin([1, 2, 3, 4])]
+                    
+                    # 3. Tomar los últimos 2 días disponibles que cumplan esa condición
+                    ultimos_2_mv = df_martes_viernes.tail(2)
+                    
+                    # 4. Calcular el promedio de esos dos días (o 0 si no hay datos)
+                    promedio_base = ultimos_2_mv['VAL_CONV'].mean() if not ultimos_2_mv.empty else 0.0
+                    
+                    # Almacenamos este nuevo promedio base para la central
                     reglas_cen[cen] = promedio_base
                 
                 d_start, d_end = rango_proy
@@ -955,7 +966,7 @@ with t_proy:
                                     'TIPO_DATO': 'Ejecutado'
                                 })
                     else:
-                        # Estimación algorítmica perfilada
+                        # Estimación algorítmica perfilada (Usando el NUEVO promedio_base)
                         for cen, base_val in reglas_cen.items():
                             proj_val = 0.0
                             if wd in [1, 2, 3, 4]: # Martes a Viernes (Base regular)
