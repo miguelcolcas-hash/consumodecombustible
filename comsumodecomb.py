@@ -266,9 +266,11 @@ def generar_urls_coes(fecha):
     
     path_nuevo = f"Post Operación/Reportes/IEOD/{año}/{mes_num}_{mes_titulo}/{dia}/AnexoA_{fecha_str}.xlsx"
     path_legacy = f"Post Operación/Reportes/IEOD/{año}/{mes_num}_{mes_titulo}/{dia}/Anexo1_Resumen_{fecha_str}.xlsx"
+    
+    # ⚡ FIX TÉCNICO: Forzar safe='' para convertir los '/' en '%2F' (Requisito normativo del portal COES)
     return [
-        (f"https://www.coes.org.pe/portal/browser/download?url={urllib.parse.quote(path_nuevo)}", "AnexoA"),
-        (f"https://www.coes.org.pe/portal/browser/download?url={urllib.parse.quote(path_legacy)}", "Anexo1")
+        (f"https://www.coes.org.pe/portal/browser/download?url={urllib.parse.quote(path_nuevo, safe='')}", "AnexoA"),
+        (f"https://www.coes.org.pe/portal/browser/download?url={urllib.parse.quote(path_legacy, safe='')}", "Anexo1")
     ]
 
 @st.cache_data(show_spinner=False)
