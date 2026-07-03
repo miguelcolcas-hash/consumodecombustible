@@ -9,9 +9,53 @@ import plotly.express as px
 import openpyxl
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Supervisión YUPANA e IEOD - Osinergmin", layout="wide")
+st.set_page_config(page_title="Supervisión YUPANA e IEOD - Osinergmin", layout="wide", initial_sidebar_state="expanded")
+
+# Inyectar CSS para ocultar elementos de la interfaz de Streamlit
+st.markdown(
+    """
+    <style>
+    #GithubIcon,
+    #MainMenu,
+    header,
+    footer {
+        visibility: hidden;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("🛢️ Dashboard Integral - Consumo de Combustible (SEIN)")
 st.markdown("### Fiscalización Dinámica: Lo Programado (YUPANA) vs. Lo Ejecutado (IEOD)")
+
+# --- LÓGICA DE INICIO DE SESIÓN ---
+def check_credentials():
+    """Devuelve True si las credenciales son correctas."""
+    CORRECT_USERNAME = "vasmol"
+    CORRECT_PASSWORD = "supervisorvasmol"
+
+    if 'authenticated' not in st.session_state:
+        st.session_state['authenticated'] = False
+
+    if not st.session_state['authenticated']:
+        with st.form("login_form"):
+            st.header("Inicio de Sesión")
+            username = st.text_input("Usuario")
+            password = st.text_input("Contraseña", type="password")
+            submitted = st.form_submit_button("Ingresar")
+
+            if submitted:
+                if username == CORRECT_USERNAME and password == CORRECT_PASSWORD:
+                    st.session_state['authenticated'] = True
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos.")
+        return False
+    return True
+
+if not check_credentials():
+    st.stop()
 
 # --- 2. PARÁMETROS OPERATIVOS COMUNES ---
 MES_TXT = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SETIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"]
@@ -237,6 +281,7 @@ def crear_grafica_area_apilada(df_plot, marcadores=None, unidad="Galones"):
     
     fig = px.area(df_melt, x="Hora", y="Consumo", color="Unidad Generadora", labels={"Consumo": "Consumo Físico"})
     fig.update_xaxes(tickformat="%d/%m %H:%M", tickangle=45)
+    fig.update_traces(line=dict(width=0)) # Elimina el contorno de las áreas
     
     fig.add_scatter(x=df_plot['Hora'], y=df_plot['TOTAL_SISTEMA'], mode='lines', line=dict(width=0, color='rgba(0,0,0,0)'), name='<b>⚡ TOTAL CONSUMO</b>', showlegend=False)
     
@@ -314,10 +359,10 @@ def extraer_datos_ieod(fecha):
         df_raw = df_raw[df_raw['TIPO_COMBUSTIBLE'].str.contains('DIESEL|DIÉSEL|RESIDUAL', na=False)]
         
         mask_diesel = df_raw['TIPO_COMBUSTIBLE'].str.contains('DIESEL|DIÉSEL|RESIDUAL', na=False)
-        df_raw.loc[mask_diesel, 'UNIDAD_MEDIDA'] = 'M3'
+        df_raw.loc[mask_diesel, 'UNIDAD_MEDIDA'] = 'm3'
         df_raw['FECHA_OPERATIVA'] = pd.to_datetime(fecha)
     else: df_raw = pd.DataFrame()
-
+    
     if df_stock is not None and not df_stock.empty:
         try: df_stock.columns = ['EMPRESA', 'CENTRAL', 'TIPO_COMBUSTIBLE', 'STOCK_FINAL', 'REPOSICION', 'UNIDADES']
         except ValueError: return df_raw, pd.DataFrame(), f"[{fecha.strftime('%d/%m/%Y')}] Error estructura COES Stock."
@@ -332,7 +377,7 @@ def extraer_datos_ieod(fecha):
             
         df_stock = df_stock[~df_stock['TIPO_COMBUSTIBLE'].str.contains('GAS', na=False)]
         df_stock = df_stock[df_stock['TIPO_COMBUSTIBLE'].str.contains('DIESEL|DIÉSEL|RESIDUAL', na=False)]
-        df_stock['UNIDADES'] = 'M3'
+        df_stock['UNIDADES'] = 'm3'
         df_stock['FECHA_OPERATIVA'] = pd.to_datetime(fecha)
     else: df_stock = pd.DataFrame()
 
@@ -586,7 +631,7 @@ with t_yupana:
         else: st.success("Sin reprogramas justificados en el periodo extraído.")
 
     else: st.warning("👈 Por favor, configura las fechas y haz clic en **'⚡ Extraer Datos'**.")
-
+    
 
 # =====================================================================
 # ====== TAB 2: IEOD INTEGRAL (Puro y Real - Barras Agrupadas) ======
@@ -839,7 +884,7 @@ with t_ieod:
                             st.dataframe(df_resumen_auto, use_container_width=True, hide_index=True)
 
         st.markdown("---")
-        st.markdown("#### 🗄️ Trazabilidad de Registros Crudos Originales (Normativo en M3)")
+        st.markdown("#### 🗄️ Trazabilidad de Registros Crudos Originales (Normativo en m3)")
         col_exp1, col_exp2 = st.columns(2)
         with col_exp1:
             with st.expander("Ver Datos Base de Consumo (IEOD)"):
@@ -857,7 +902,7 @@ with t_ieod:
                 else: st.write("Sin datos base de stock/reposición IEOD.")
     else:
         st.warning("👈 Por favor, configura las fechas y haz clic en **'⚡ Extraer Datos'** para visualizar el IEOD Integral.")
-
+        
 
 # =====================================================================
 # ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO DINÁMICO) ======
