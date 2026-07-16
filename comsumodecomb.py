@@ -443,11 +443,113 @@ if btn_extraer:
 st.markdown("---")
 
 # --- 6. VISUALIZACIÓN MULTI-PESTAÑA ---
-t_yupana, t_ieod, t_proy = st.tabs([
+t_comb_cen, t_yupana, t_ieod, t_proy = st.tabs([
+    "⛽ Combustible por Central",
     "📅 YUPANA (Programación y Motivos)", 
     "✅ IEOD Integral (Consumo, Stock y Reposición)",
     "🔮 Proyección Diaria (Estimación)"
 ])
+
+# =====================================================================
+# ====== TAB 1: COMBUSTIBLE POR CENTRAL (NUEVA PESTAÑA POR DEFECTO) ======
+# =====================================================================
+with t_comb_cen:
+    st.info("**Contexto Osinergmin:** Análisis detallado del balance de combustible (consumo, stock, reposición) para cada central térmica seleccionada en los filtros.")
+
+    if not (has_stock or has_ieod):
+        st.warning("👈 Por favor, configura las fechas y haz clic en **'⚡ Extraer Datos'** para poder visualizar los datos.")
+    elif not filtro_cen_ieod:
+        st.info("Seleccione al menos una central en los filtros para activar esta vista.")
+    else:
+        # Iterar por cada central seleccionada en el filtro
+        for central in sorted(filtro_cen_ieod):
+            st.markdown("---")
+            st.markdown(f"## ⛽ Balance Logístico: {central}")
+
+            # Filtrar los dataframes principales para esta central específica
+            df_cons_central = df_cons_final[df_cons_final['CENTRAL'] == central] if not df_cons_final.empty else pd.DataFrame()
+            df_stock_central = df_p_stk[df_p_stk['CENTRAL'] == central] if not df_p_stk.empty else pd.DataFrame()
+
+            # Iterar por cada combustible relevante para esta central
+            combustibles_central = []
+            if not df_cons_central.empty: combustibles_central.extend(df_cons_central['TIPO_COMBUSTIBLE'].unique())
+            if not df_stock_central.empty: combustibles_central.extend(df_stock_central['TIPO_COMBUSTIBLE'].unique())
+            combustibles_central = sorted(list(set(combustibles_central)))
+
+            for comb in combustibles_central:
+                if filtro_comb_ieod and comb not in filtro_comb_ieod:
+                    continue
+
+                # Preparar datos para la gráfica de tendencia de esta central/combustible
+                df_cons_trend = df_cons_central[df_cons_central['TIPO_COMBUSTIBLE'] == comb][['FECHA_OPERATIVA', 'CONS_PLOT']].rename(columns={'CONS_PLOT': 'Consumo'})
+                df_stock_trend = df_stock_central[df_stock_central['TIPO_COMBUSTIBLE'] == comb][['FECHA_OPERATIVA', 'STOCK_PLOT', 'REPO_PLOT']].rename(columns={'STOCK_PLOT': 'Stock', 'REPO_PLOT': 'Reposición'})
+
+                df_trend = pd.merge(df_cons_trend, df_stock_trend, on='FECHA_OPERATIVA', how='outer').fillna(0)
+                df_trend = df_trend.sort_values('FECHA_OPERATIVA')
+
+                if not df_trend.empty:
+                    import plotly.graph_objects as go
+
+                    fig_trend = go.Figure()
+                    
+                    # Barra para Consumo
+                    fig_trend.add_trace(go.Bar(
+                        x=df_trend['FECHA_OPERATIVA'],
+                        y=df_trend['Consumo'],
+                        name='Consumo',
+                        marker_color='crimson',
+                        text=df_trend['Consumo'].apply(lambda x: f'{x:,.1f}'),
+                        textposition='auto'
+                    ))
+
+                    # Línea punteada para Stock
+                    fig_trend.add_trace(go.Scatter(
+                        x=df_trend['FECHA_OPERATIVA'],
+                        y=df_trend['Stock'],
+                        name='Stock Final',
+                        mode='lines+markers',
+                        line=dict(color='royalblue', width=2, dash='dot')
+                    ))
+
+                    # Línea punteada para Reposición
+                    fig_trend.add_trace(go.Scatter(
+                        x=df_trend['FECHA_OPERATIVA'],
+                        y=df_trend['Reposición'],
+                        name='Reposición',
+                        mode='lines+markers',
+                        line=dict(color='green', width=2, dash='dot')
+                    ))
+
+                    fig_trend.update_layout(
+                        title=f"Tendencia Logística: {central} - {comb}",
+                        height=450,
+                        xaxis_title="Día Operativo",
+                        yaxis_title=f"Volumen ({unidad_sel_log})",
+                        barmode='overlay',
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        hovermode="x unified"
+                    )
+                    fig_trend.update_xaxes(type='date', dtick="86400000", tickformat="%d/%m/%Y")
+                    st.plotly_chart(fig_trend, use_container_width=True)
+
+                    # Tabla de datos con variación porcentual
+                    st.markdown("#### 📋 Tabla de Datos y Variación Diaria")
+                    df_table_trend = df_trend.copy()
+                    df_table_trend['Consumo Var. %'] = df_table_trend['Consumo'].pct_change().fillna(0) * 100
+                    df_table_trend['Stock Var. %'] = df_table_trend['Stock'].pct_change().fillna(0) * 100
+                    df_table_trend['Reposición Var. %'] = df_table_trend['Reposición'].pct_change().fillna(0) * 100
+                    
+                    st.dataframe(df_table_trend.style.format({
+                        'Consumo': '{:,.2f}',
+                        'Stock': '{:,.2f}',
+                        'Reposición': '{:,.2f}',
+                        'Consumo Var. %': '{:+.2f}%',
+                        'Stock Var. %': '{:+.2f}%',
+                        'Reposición Var. %': '{:+.2f}%'
+                    }), use_container_width=True, hide_index=True)
+
+                else:
+                    st.info(f"No hay datos de consumo, stock o reposición para **{central}** con el combustible **{comb}** en el periodo seleccionado.")
 
 # =====================================================================
 # ====== TAB 1: YUPANA (PROGRAMADO Y MOTIVOS) ======
@@ -631,11 +733,7 @@ with t_yupana:
         else: st.success("Sin reprogramas justificados en el periodo extraído.")
 
     else: st.warning("👈 Por favor, configura las fechas y haz clic en **'⚡ Extraer Datos'**.")
-    
 
-# =====================================================================
-# ====== TAB 2: IEOD INTEGRAL (Puro y Real - Barras Agrupadas) ======
-# =====================================================================
 with t_ieod:
     st.info("**Contexto Osinergmin:** Entorno de auditoría pura. Muestra únicamente **Datos Reales Ejecutados** (IEOD). Las gráficas se muestran en formato de barras agrupadas y apiladas para facilitar distintas comparativas entre centrales de un mismo día.")
 
@@ -784,6 +882,86 @@ with t_ieod:
                         st.info(f"**🚛 Reposición Diaria:** No hay reposición registrada para {comb} en el periodo y centrales seleccionadas.")
 
                     # =====================================================================
+                    # ====== NUEVO MÓDULO: GRÁFICA DE TENDENCIA PARA CENTRAL ÚNICA ======
+                    # =====================================================================
+                    if len(filtro_cen_ieod) == 1:
+                        st.markdown("---")
+                        st.markdown(f"### 📈 Tendencia Logística Integral: {filtro_cen_ieod[0]} - {comb}")
+
+                        # Preparar datos de consumo
+                        df_cons_trend = df_cons_final[df_cons_final['CENTRAL'] == filtro_cen_ieod[0]][['FECHA_OPERATIVA', 'CONS_PLOT']].rename(columns={'CONS_PLOT': 'Consumo'})
+
+                        # Preparar datos de stock y reposición
+                        df_stock_trend = df_p_stk[df_p_stk['CENTRAL'] == filtro_cen_ieod[0]][['FECHA_OPERATIVA', 'STOCK_PLOT', 'REPO_PLOT']].rename(columns={'STOCK_PLOT': 'Stock', 'REPO_PLOT': 'Reposición'})
+
+                        # Unir los dataframes
+                        df_trend = pd.merge(df_cons_trend, df_stock_trend, on='FECHA_OPERATIVA', how='outer').fillna(0)
+                        df_trend = df_trend.sort_values('FECHA_OPERATIVA')
+
+                        if not df_trend.empty:
+                            import plotly.graph_objects as go
+
+                            fig_trend = go.Figure()
+
+                            # Barra para Consumo
+                            fig_trend.add_trace(go.Bar(
+                                x=df_trend['FECHA_OPERATIVA'],
+                                y=df_trend['Consumo'],
+                                name='Consumo',
+                                marker_color='crimson',
+                                text=df_trend['Consumo'].apply(lambda x: f'{x:,.1f}'),
+                                textposition='auto'
+                            ))
+
+                            # Línea punteada para Stock
+                            fig_trend.add_trace(go.Scatter(
+                                x=df_trend['FECHA_OPERATIVA'],
+                                y=df_trend['Stock'],
+                                name='Stock Final',
+                                mode='lines+markers',
+                                line=dict(color='royalblue', width=2, dash='dot')
+                            ))
+
+                            # Línea punteada para Reposición
+                            fig_trend.add_trace(go.Scatter(
+                                x=df_trend['FECHA_OPERATIVA'],
+                                y=df_trend['Reposición'],
+                                name='Reposición',
+                                mode='lines+markers',
+                                line=dict(color='green', width=2, dash='dot')
+                            ))
+
+                            fig_trend.update_layout(
+                                height=500,
+                                xaxis_title="Día Operativo",
+                                yaxis_title=f"Volumen ({unidad_sel_log})",
+                                barmode='overlay',
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                                hovermode="x unified"
+                            )
+                            fig_trend.update_xaxes(type='date', dtick="86400000", tickformat="%d/%m/%Y")
+                            st.plotly_chart(fig_trend, use_container_width=True)
+
+                            # Tabla de datos con variación porcentual
+                            st.markdown("#### 📋 Tabla de Datos y Variación Diaria")
+                            df_table_trend = df_trend.copy()
+                            df_table_trend['Consumo Var. %'] = df_table_trend['Consumo'].pct_change().fillna(0) * 100
+                            df_table_trend['Stock Var. %'] = df_table_trend['Stock'].pct_change().fillna(0) * 100
+                            df_table_trend['Reposición Var. %'] = df_table_trend['Reposición'].pct_change().fillna(0) * 100
+                            
+                            st.dataframe(df_table_trend.style.format({
+                                'Consumo': '{:,.2f}',
+                                'Stock': '{:,.2f}',
+                                'Reposición': '{:,.2f}',
+                                'Consumo Var. %': '{:+.2f}%',
+                                'Stock Var. %': '{:+.2f}%',
+                                'Reposición Var. %': '{:+.2f}%'
+                            }), use_container_width=True, hide_index=True)
+
+                        else:
+                            st.info(f"No hay datos de consumo, stock o reposición para **{filtro_cen_ieod[0]}** con el combustible **{comb}** en el periodo seleccionado.")
+
+                    # =====================================================================
                     # ====== NUEVO MÓDULO: AUTONOMÍA DE OPERACIÓN A POTENCIA EFECTIVA ======
                     # =====================================================================
                     if not df_stk_final.empty:
@@ -903,6 +1081,102 @@ with t_ieod:
     else:
         st.warning("👈 Por favor, configura las fechas y haz clic en **'⚡ Extraer Datos'** para visualizar el IEOD Integral.")
         
+# =====================================================================
+# ====== TAB 3: TENDENCIA DE CENTRAL (NUEVA PESTAÑA) ======
+# =====================================================================
+with t_tendencia:
+    st.info("**Contexto Osinergmin:** Esta sección se activa al seleccionar **una única central** en los filtros de la pestaña anterior. Muestra la tendencia diaria de consumo, stock y reposición para un análisis logístico detallado.")
+
+    if 'df_stock' in st.session_state and 'df_ieod' in st.session_state:
+        # Reutilizamos los filtros y datos ya procesados de la pestaña IEOD
+        # Esto evita duplicar código y mantiene la consistencia
+        if len(filtro_cen_ieod) == 1:
+            central_unica = filtro_cen_ieod[0]
+            
+            # Iteramos sobre los combustibles seleccionados
+            for comb in sorted(comb_iterar):
+                st.markdown("---")
+                st.markdown(f"### 📈 Tendencia Logística Integral: {central_unica} - {comb}")
+
+                # Preparar datos de consumo (ya calculados en la pestaña IEOD)
+                df_cons_trend = df_cons_final[(df_cons_final['CENTRAL'] == central_unica) & (df_cons_final['TIPO_COMBUSTIBLE'] == comb)][['FECHA_OPERATIVA', 'CONS_PLOT']].rename(columns={'CONS_PLOT': 'Consumo'})
+
+                # Preparar datos de stock y reposición (ya calculados en la pestaña IEOD)
+                df_stock_trend = df_p_stk[(df_p_stk['CENTRAL'] == central_unica) & (df_p_stk['TIPO_COMBUSTIBLE'] == comb)][['FECHA_OPERATIVA', 'STOCK_PLOT', 'REPO_PLOT']].rename(columns={'STOCK_PLOT': 'Stock', 'REPO_PLOT': 'Reposición'})
+
+                # Unir los dataframes
+                df_trend = pd.merge(df_cons_trend, df_stock_trend, on='FECHA_OPERATIVA', how='outer').fillna(0)
+                df_trend = df_trend.sort_values('FECHA_OPERATIVA')
+
+                if not df_trend.empty:
+                    import plotly.graph_objects as go
+
+                    fig_trend = go.Figure()
+
+                    # Barra para Consumo
+                    fig_trend.add_trace(go.Bar(
+                        x=df_trend['FECHA_OPERATIVA'],
+                        y=df_trend['Consumo'],
+                        name='Consumo',
+                        marker_color='crimson',
+                        text=df_trend['Consumo'].apply(lambda x: f'{x:,.1f}'),
+                        textposition='auto'
+                    ))
+
+                    # Línea punteada para Stock
+                    fig_trend.add_trace(go.Scatter(
+                        x=df_trend['FECHA_OPERATIVA'],
+                        y=df_trend['Stock'],
+                        name='Stock Final',
+                        mode='lines+markers',
+                        line=dict(color='royalblue', width=2, dash='dot')
+                    ))
+
+                    # Línea punteada para Reposición
+                    fig_trend.add_trace(go.Scatter(
+                        x=df_trend['FECHA_OPERATIVA'],
+                        y=df_trend['Reposición'],
+                        name='Reposición',
+                        mode='lines+markers',
+                        line=dict(color='green', width=2, dash='dot')
+                    ))
+
+                    fig_trend.update_layout(
+                        height=500,
+                        xaxis_title="Día Operativo",
+                        yaxis_title=f"Volumen ({unidad_sel_log})",
+                        barmode='overlay',
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        hovermode="x unified"
+                    )
+                    fig_trend.update_xaxes(type='date', dtick="86400000", tickformat="%d/%m/%Y")
+                    st.plotly_chart(fig_trend, use_container_width=True)
+
+                    # Tabla de datos con variación porcentual
+                    st.markdown("#### 📋 Tabla de Datos y Variación Diaria")
+                    df_table_trend = df_trend.copy()
+                    df_table_trend['Consumo Var. %'] = df_table_trend['Consumo'].pct_change().fillna(0) * 100
+                    df_table_trend['Stock Var. %'] = df_table_trend['Stock'].pct_change().fillna(0) * 100
+                    df_table_trend['Reposición Var. %'] = df_table_trend['Reposición'].pct_change().fillna(0) * 100
+                    
+                    st.dataframe(df_table_trend.style.format({
+                        'Consumo': '{:,.2f}',
+                        'Stock': '{:,.2f}',
+                        'Reposición': '{:,.2f}',
+                        'Consumo Var. %': '{:+.2f}%',
+                        'Stock Var. %': '{:+.2f}%',
+                        'Reposición Var. %': '{:+.2f}%'
+                    }), use_container_width=True, hide_index=True)
+
+                else:
+                    st.info(f"No hay datos de consumo, stock o reposición para **{central_unica}** con el combustible **{comb}** en el periodo seleccionado.")
+        
+        elif len(filtro_cen_ieod) > 1:
+            st.warning("Por favor, seleccione solo **una central** en los filtros de la pestaña '✅ IEOD Integral' para ver su tendencia detallada.")
+        else:
+            st.info("Seleccione una empresa y al menos una central en los filtros de la pestaña '✅ IEOD Integral' para activar esta vista.")
+    else:
+        st.warning("👈 Por favor, configura las fechas y haz clic en **'⚡ Extraer Datos'** para poder visualizar las tendencias.")
 
 # =====================================================================
 # ====== TAB 3: PROYECCIÓN DIARIA (ALGORITMO HOMÓLOGO DINÁMICO) ======
